@@ -1,26 +1,41 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --night: #15133a;
+  --night-2: #261b57;
+  --gold: #e3b94d;
+  --gold-soft: #f3d98a;
+  --gold-deep: #9a6f12;
+  --sand: #f3e6c4;
+  --ink: #3a2a17;     /* نص على الرق */
+  --slate: #7a6548;   /* نص ثانوي على الرق */
+  --line: rgba(58, 42, 23, 0.2);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html, body { min-height: 100%; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--sand);
+  background-color: var(--night);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88'%3E%3Cg fill='none' stroke='%23e3b94d' stroke-opacity='.11' stroke-width='1.2'%3E%3Crect x='22' y='22' width='44' height='44'/%3E%3Crect x='22' y='22' width='44' height='44' transform='rotate(45 44 44)'/%3E%3Ccircle cx='44' cy='44' r='9'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% -10%, #3a2a7a 0%, transparent 60%),
+    linear-gradient(180deg, var(--night-2), var(--night) 70%);
+  background-attachment: fixed;
 }
+
+.font-title { font-family: var(--font-ruqaa), serif; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* لوحة الرق (قائمة الترتيب) */
+.parchment {
+  color: var(--ink);
+  background: linear-gradient(180deg, #f6ebd0, #ecdbb6);
+  border-radius: 24px;
+  box-shadow:
+    0 30px 60px -30px #000,
+    inset 0 0 0 6px #f3e4c0,
+    inset 0 0 0 7.5px var(--gold-deep),
+    inset 0 0 40px rgba(154, 111, 18, 0.18);
+}
+
+button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
