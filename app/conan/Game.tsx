@@ -139,8 +139,8 @@ export default function Game() {
       <main className="shell">
         {header}
         <section className="stage">
-          <p className="kicker">مسابقة المجموعات</p>
-          <h2>{GAME_NAME}</h2>
+          <h2> مسابقة {GAME_NAME}</h2>
+          <p className="kicker">الفرق و الاسئلة و توزيع الجولات</p>
           <ul className="facts">
             <li><b>{TEAMS}</b><span>فرق</span></li>
             <li><b>{TOTAL}</b><span>سؤالًا</span></li>

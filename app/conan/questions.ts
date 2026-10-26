@@ -99,4 +99,4 @@ export const QUESTIONS: Question[] = [
 ];
 
 export const TEAMS = 4;
-export const SECONDS_PER_QUESTION = 30;
+export const SECONDS_PER_QUESTION = 45;

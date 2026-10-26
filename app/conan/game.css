@@ -115,7 +115,28 @@
 .conan .setup .cta{display:block;margin:0 auto}
 .conan .ghost{background:transparent;color:var(--c-mut);border:1px solid var(--c-edge);border-radius:12px;padding:10px 20px;cursor:pointer}
 .conan .ghost:hover{color:#fff;border-color:var(--c-glow)}
+.conan .cover {
+  position: relative;
+  min-height: 100vh;
+  background-image:
+    linear-gradient(rgba(8, 18, 45, 0.45), rgba(8, 18, 45, 0.45)),
+    url("/conan/cover.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
 
+.conan .cover-img {
+  display: none;
+}
+
+.conan .cover-card {
+  position: relative;
+  z-index: 1;
+  background: rgba(8, 18, 45, 0.001);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(3px);
+}
 .conan .rank{list-style:none;padding:0;margin:0 0 18px}
 .conan .rank li{display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:8px;padding:12px 14px;margin-bottom:8px;border-radius:12px;border:1px solid var(--c-edge);border-right:4px solid var(--tc);background:rgba(6,13,36,.5);font-size:20px}
 .conan .rank b{font-family:var(--font-ruqaa),serif;font-size:28px;color:var(--tc)}

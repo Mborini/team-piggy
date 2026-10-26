@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Game from "./Game";
 
 const MUSIC_SRC = "/conan/music.mp3";
+const IMAGE_SRC = "/conan/cover.png"; // صورة صفحة الافتتاح
 const VOLUME = 0.35; // من 0 إلى 1، منخفض حتى تبقى أصوات اللعبة واضحة
 const SCHOOL = "أكاديمية ومدارس المجددون الدولية";
 const TEACHER = "الأستاذ حسن الساكت";
@@ -31,6 +32,7 @@ export default function Experience() {
   const audio = useRef<HTMLAudioElement>(null);
   const [entered, setEntered] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [imgOk, setImgOk] = useState(true);
 
   const play = useCallback(() => {
     audio.current?.play().catch(() => {});
@@ -68,10 +70,20 @@ export default function Experience() {
       ) : (
         <main className="cover">
           <div className="cover-card">
-            <Crest />
+            {imgOk ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className="cover-img"
+                src={IMAGE_SRC}
+                alt={SCHOOL}
+                onError={() => setImgOk(false)}
+              />
+            ) : (
+              <Crest />
+            )}
             <h1>{SCHOOL}</h1>
             <div className="cover-rule"><i /><span>تقدّم</span><i /></div>
-            <h2>{TITLE}</h2>
+            <h2>مسابقة {TITLE}</h2>
             <p className="by">إعداد <b>{TEACHER}</b></p>
             <button className="cta" onClick={enter}>ادخل المسابقة</button>
           </div>
