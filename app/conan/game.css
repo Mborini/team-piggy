@@ -1,0 +1,117 @@
+.conan{
+  --c-night:#060d24;--c-deep:#0c1b4d;--c-jacket:#1c3f94;--c-bow:#d9263a;--c-gold:#d9b25f;--c-gold-hi:#f3d58a;--c-glow:#bfe3ff;
+  --c-ok:#1fbf75;--c-no:#e5484d;--c-mut:#9db0e0;--c-edge:rgba(160,200,255,.18);
+  position:relative;min-height:100vh;color:#eef4ff;overflow-x:hidden;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  background:
+    radial-gradient(ellipse 60% 40% at 85% 0%,rgba(217,178,95,.16),transparent 70%),
+    radial-gradient(ellipse 50% 40% at 5% 80%,rgba(76,155,255,.16),transparent 70%),
+    linear-gradient(rgba(140,180,255,.035) 1px,transparent 1px) 0 0/40px 40px,
+    linear-gradient(90deg,rgba(140,180,255,.035) 1px,transparent 1px) 0 0/40px 40px,
+    linear-gradient(180deg,#0a1640,#060d24 55%,#040919);
+  background-attachment:fixed;
+}
+.conan *{box-sizing:border-box}
+.conan button,.conan input{font:inherit}
+.conan h1,.conan h2,.conan h3,.conan p,.conan ul,.conan ol{margin:0}
+.conan .shell{max-width:980px;margin:0 auto;padding:18px 16px 56px}
+
+/* ===== الترويسة: اسم الأكاديمية ===== */
+.conan .masthead{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;margin-bottom:20px;border-radius:18px;border:1px solid var(--c-edge);border-top:2px solid var(--c-gold);background:linear-gradient(180deg,rgba(18,36,92,.75),rgba(8,17,48,.75));backdrop-filter:blur(14px);box-shadow:0 20px 40px -24px #000}
+.conan .school{display:flex;align-items:center;gap:16px}
+.conan .school-txt h1{font-family:var(--font-ruqaa),serif;font-size:clamp(26px,4.6vw,40px);line-height:1.25;font-weight:700;background:linear-gradient(180deg,var(--c-gold-hi),var(--c-gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.conan .rule{display:flex;align-items:center;gap:10px;margin-top:2px;color:var(--c-mut);font-size:14px}
+.conan .rule i{display:block;height:1px;width:34px;background:linear-gradient(90deg,transparent,var(--c-gold))}
+.conan .rule i:last-child{background:linear-gradient(270deg,transparent,var(--c-gold))}
+.conan .meta{display:flex;align-items:center;gap:10px}
+.conan .teacher{display:flex;flex-direction:column;align-items:flex-start;padding:6px 16px;border-radius:12px;border:1px solid var(--c-edge);border-right:3px solid var(--c-bow);background:rgba(6,13,36,.55)}
+.conan .teacher small{color:var(--c-mut);font-size:12px}
+.conan .teacher b{font-size:16px;font-weight:700}
+.conan .icon{width:42px;height:42px;border-radius:12px;border:1px solid var(--c-edge);background:rgba(6,13,36,.55);color:var(--c-glow);font-size:20px;cursor:pointer}
+.conan .icon:hover{border-color:var(--c-gold);color:#fff}
+
+/* ===== المنصّة (بدون صور) ===== */
+.conan .stage{position:relative;overflow:hidden;text-align:center;padding:44px 20px;margin-bottom:18px;border-radius:20px;border:1px solid var(--c-edge);background:
+  radial-gradient(circle at 50% 120%,rgba(217,178,95,.22),transparent 60%),
+  linear-gradient(135deg,#0e2260,#08143c)}
+.conan .stage::before{content:"";position:absolute;inset:0;opacity:.07;background:repeating-linear-gradient(45deg,#fff 0 1px,transparent 1px 22px)}
+.conan .stage>*{position:relative}
+.conan .kicker{color:var(--c-gold-hi);font-size:16px;font-weight:600;margin-bottom:6px}
+.conan .stage h2{font-family:var(--font-ruqaa),serif;font-size:clamp(40px,8vw,68px);line-height:1.25;font-weight:700}
+.conan .facts{list-style:none;padding:0;display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin-top:22px}
+.conan .facts li{min-width:110px;padding:10px 16px;border-radius:14px;border:1px solid var(--c-edge);background:rgba(6,13,36,.5)}
+.conan .facts b{display:block;font-size:30px;color:var(--c-gold-hi)}
+.conan .facts span{font-size:14px;color:var(--c-mut)}
+.conan .congrats{margin-top:10px;color:#dbe7ff;font-size:18px}
+
+.conan .glass{background:rgba(12,27,77,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--c-edge);border-radius:20px;padding:24px;box-shadow:0 24px 50px -22px #000}
+.conan .setup h3{font-size:20px;margin-bottom:14px}
+.conan .names{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
+.conan .names label{display:block;padding:10px 12px;border-radius:12px;border:1px solid var(--c-edge);border-right:4px solid var(--tc);background:rgba(6,13,36,.5)}
+.conan .names span{display:block;font-size:13px;color:var(--c-mut);margin-bottom:4px}
+.conan .names input{width:100%;padding:9px 10px;border:1px solid var(--c-edge);border-radius:8px;background:rgba(255,255,255,.06);color:#fff;font-size:17px}
+.conan .hint{color:var(--c-mut);font-size:13px;margin-top:14px;text-align:center}
+
+/* ===== اللعب ===== */
+.conan .board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.conan .score{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:10px 14px;border-radius:14px;background:rgba(12,27,77,.55);border:1px solid var(--c-edge);border-top:3px solid var(--tc);transition:box-shadow .25s,transform .25s}
+.conan .score span{font-size:14px;color:var(--c-mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conan .score strong{font-size:30px;font-weight:700}
+.conan .score.active{box-shadow:0 0 0 2px var(--tc),0 0 30px -4px var(--tc);transform:translateY(-2px)}
+.conan .score.active span{color:#fff}
+.conan .progress{display:grid;grid-template-columns:repeat(16,1fr);gap:4px;margin:14px 0 16px}
+.conan .progress i{display:block;height:5px;border-radius:3px;background:rgba(160,200,255,.16)}
+.conan .progress i.done{background:var(--c-jacket)}
+.conan .progress i.now{background:var(--c-bow)}
+
+.conan .play{border-top:4px solid var(--tc)}
+.conan .turn{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.conan .turn small{color:var(--c-mut);font-size:14px}
+.conan .turn h2{font-family:var(--font-ruqaa),serif;font-size:34px;color:var(--tc)}
+.conan .clock{position:relative;width:88px;height:88px;flex:none}
+.conan .clock svg{width:100%;height:100%;transform:rotate(-90deg) scaleY(-1)}
+.conan .clock circle{fill:none;stroke-width:8}
+.conan .track{stroke:rgba(160,200,255,.16)}
+.conan .arc{stroke:var(--c-glow);stroke-linecap:round;transition:stroke-dashoffset 1s linear}
+.conan .clock span{position:absolute;inset:0;display:grid;place-items:center;font-size:30px;font-weight:700}
+.conan .clock.urgent .arc{stroke:var(--c-bow)}
+.conan .clock.urgent span{color:#ff6b7a;animation:conan-beat 1s infinite}
+.conan .question{font-size:clamp(23px,4.4vw,34px);font-weight:700;line-height:1.7;margin:22px 0;animation:conan-in .35s;white-space:pre-line}
+.conan .options{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.conan .opt{display:flex;align-items:center;gap:14px;text-align:right;padding:16px;border-radius:14px;border:1px solid var(--c-edge);background:rgba(6,13,36,.55);color:#fff;font-size:21px;font-weight:600;cursor:pointer;transition:transform .12s,background .15s,border-color .15s}
+.conan .opt b{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,var(--c-gold-hi),var(--c-gold));color:#1a1205;font-size:19px}
+.conan .opt:hover:not(:disabled){background:rgba(28,63,148,.55);border-color:var(--c-glow);transform:translateY(-2px)}
+.conan .opt:focus-visible,.conan .cta:focus-visible,.conan .ghost:focus-visible,.conan .icon:focus-visible,.conan input:focus-visible{outline:3px solid var(--c-gold);outline-offset:2px}
+.conan .opt:disabled{cursor:default}
+.conan .opt.ok{background:var(--c-ok);border-color:var(--c-ok);animation:conan-pop .45s}
+.conan .opt.no{background:var(--c-no);border-color:var(--c-no);animation:conan-shake .4s}
+.conan .opt.dim{opacity:.4}
+.conan .opt.ok b,.conan .opt.no b{background:#fff}
+.conan .verdict{min-height:30px;margin-top:16px;font-weight:700;font-size:19px;text-align:center}
+.conan .verdict.good{color:#4ae3a0}
+.conan .verdict.bad{color:#ff7b82}
+.conan .row{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-top:12px;min-height:50px}
+.conan .cta{background:linear-gradient(180deg,#ee3548,var(--c-bow));color:#fff;border:0;border-radius:12px;padding:13px 34px;font-size:18px;font-weight:700;cursor:pointer;box-shadow:0 4px 0 #8c1523,0 10px 24px -8px rgba(217,38,58,.6)}
+.conan .cta:active{transform:translateY(3px);box-shadow:0 1px 0 #8c1523}
+.conan .setup .cta{display:block;margin:0 auto}
+.conan .ghost{background:transparent;color:var(--c-mut);border:1px solid var(--c-edge);border-radius:12px;padding:10px 20px;cursor:pointer}
+.conan .ghost:hover{color:#fff;border-color:var(--c-glow)}
+
+.conan .rank{list-style:none;padding:0;margin:0 0 18px}
+.conan .rank li{display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:8px;padding:12px 14px;margin-bottom:8px;border-radius:12px;border:1px solid var(--c-edge);border-right:4px solid var(--tc);background:rgba(6,13,36,.5);font-size:20px}
+.conan .rank b{font-family:var(--font-ruqaa),serif;font-size:28px;color:var(--tc)}
+.conan .rank em{font-style:normal;font-weight:700}
+.conan .rank li.win{background:rgba(217,178,95,.14);border-color:var(--c-gold)}
+
+@keyframes conan-pop{50%{transform:scale(1.04)}}
+@keyframes conan-shake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+@keyframes conan-beat{50%{transform:scale(1.15)}}
+@keyframes conan-in{from{opacity:0;transform:translateY(8px)}}
+@media (max-width:640px){
+  .conan .board{grid-template-columns:1fr 1fr}
+  .conan .options,.conan .names{grid-template-columns:1fr}
+  .conan .glass{padding:16px}
+  .conan .masthead{padding:12px}
+  .conan .teacher{align-items:flex-start}
+}
+@media (prefers-reduced-motion:reduce){.conan *{animation:none!important;transition:none!important}}
