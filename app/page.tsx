@@ -27,7 +27,7 @@ const TIERS: Record<Tier, { label: string; value: number; from: number; main: st
 const getTier = (p: number): Tier => (p >= 26 ? "gold" : p >= 16 ? "bronze" : "silver");
 const dinar = (q: number) => (q / 100).toFixed(2); // 100 قرش = 1 دينار
 
-/* ───────────── الألقاب والشخصيات (حسب الترتيب) ───────────── */
+/* ───────────── الألقاب والشخصيات ───────────── */
 type Role = {
   title: string;
   skin: string;
@@ -41,15 +41,18 @@ type Role = {
   extra?: "patch" | "freckles" | "sweat" | "carrot";
 };
 
-// الترتيب 1 = الأعلى نقاطاً. غيّر الألقاب من هنا فقط.
+// علي بابا (الأول بالمصفوفة) يُعطى لصاحب أقل النقاط، والباقي حسب الترتيب من الأعلى نقاطاً. غيّر الألقاب من هنا فقط.
 const ROLES: Role[] = [
   { title: "علي بابا", skin: "#e0ae83", cloth: "#1f7a6d", bg: ["#35a394", "#14574f"], hat: "turban", hatColor: "#f3ecd8", beard: "short", beardColor: "#5c4a3a", mood: "smile" },
   { title: "زعيم الحرامية", skin: "#c58a60", cloth: "#5a1220", bg: ["#a3243a", "#4a0f1a"], hat: "turban", hatColor: "#1a1722", beard: "full", beardColor: "#15110f", mood: "stern", extra: "patch" },
-  { title: "مساعد الحرامية", skin: "#cf9970", cloth: "#4b2d6e", bg: ["#7447ad", "#33194f"], hat: "turban", hatColor: "#6a2f8f", beard: "goatee", beardColor: "#1f1a22", mood: "smirk" },
-  { title: "صبي الحرامية", skin: "#e8bd94", cloth: "#c0432f", bg: ["#e09a35", "#8a4d0f"], hat: "fez", hatColor: "#b3262a", beard: "none", beardColor: "#000", mood: "grin", extra: "freckles" },
-  { title: "خادم الحرامية", skin: "#c9946d", cloth: "#6e6a60", bg: ["#8795a3", "#3e4650"], hat: "scarf", hatColor: "#9aa393", beard: "none", beardColor: "#000", mood: "tired", extra: "sweat" },
+  { title: "مساعد الزعيم", skin: "#cf9970", cloth: "#4b2d6e", bg: ["#7447ad", "#33194f"], hat: "turban", hatColor: "#6a2f8f", beard: "goatee", beardColor: "#1f1a22", mood: "smirk" },
+  { title: "صبي الزعيم", skin: "#e8bd94", cloth: "#c0432f", bg: ["#e09a35", "#8a4d0f"], hat: "fez", hatColor: "#b3262a", beard: "none", beardColor: "#000", mood: "grin", extra: "freckles" },
+  { title: "خادم الزعيم", skin: "#c9946d", cloth: "#6e6a60", bg: ["#8795a3", "#3e4650"], hat: "scarf", hatColor: "#9aa393", beard: "none", beardColor: "#000", mood: "tired", extra: "sweat" },
   { title: "سائس الحمار", skin: "#d8a77a", cloth: "#7a5a2c", bg: ["#7fa23f", "#3a4f1c"], hat: "straw", hatColor: "#e3c56a", beard: "stubble", beardColor: "#4a3a2a", mood: "smile", extra: "carrot" },
 ];
+
+// الأخير (أقل نقاط) = علي بابا (ROLES[0])، وباقي الترتيب من الأعلى يأخذ الألقاب 1..5
+const roleIndex = (rank: number, total: number) => (rank === total - 1 ? 0 : rank + 1);
 
 // الترتيب: الأعلى نقاطاً أولاً. عند التعادل: من وصل للنقاط أولاً يتقدّم.
 function rankMembers(members: Member[], history: Entry[]): Member[] {
@@ -473,7 +476,7 @@ function TierBadge({ tier }: { tier: Tier }) {
 }
 
 /* ───────────── صف العضو ───────────── */
-function MemberRow({ member, rank, money, onRename, onAdd }: { member: Member; rank: number; money: number; onRename: (id: number, n: string) => void; onAdd: (id: number) => void }) {
+function MemberRow({ member, role, money, onRename, onAdd }: { member: Member; role: number; money: number; onRename: (id: number, n: string) => void; onAdd: (id: number) => void }) {
   const tier = getTier(member.points);
   const t = TIERS[tier];
   const next = t.next;
@@ -486,14 +489,14 @@ function MemberRow({ member, rank, money, onRename, onAdd }: { member: Member; r
       className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-3 py-4 sm:grid-cols-[auto_minmax(0,1.1fr)_auto_minmax(0,1fr)_auto_auto]"
     >
       <motion.div
-        key={rank}
+        key={role}
         initial={{ scale: 0.8, rotate: -6 }}
         animate={{ scale: 1, rotate: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 16 }}
         className="rounded-full"
-        style={rank === 0 ? { boxShadow: "0 0 0 3px #f3e4c0, 0 0 22px 4px rgba(227,185,77,.75)" } : undefined}
+        style={role === 0 ? { boxShadow: "0 0 0 3px #f3e4c0, 0 0 22px 4px rgba(227,185,77,.75)" } : undefined}
       >
-        <Avatar role={rank} size={64} />
+        <Avatar role={role} size={64} />
       </motion.div>
 
       <div className="min-w-0">
@@ -504,8 +507,8 @@ function MemberRow({ member, rank, money, onRename, onAdd }: { member: Member; r
           aria-label={`اسم العضو ${member.name}`}
           className="w-full min-w-0 rounded-md bg-transparent px-1 text-lg font-bold hover:bg-black/[.05] focus:bg-black/[.05]"
         />
-        <div className="font-title px-1 text-lg leading-tight" style={{ color: rank === 0 ? "#9a6f12" : "#6b4a2b" }}>
-          {ROLES[rank].title}
+        <div className="font-title px-1 text-lg leading-tight" style={{ color: role === 0 ? "#9a6f12" : "#6b4a2b" }}>
+          {ROLES[role].title}
         </div>
       </div>
 
@@ -627,10 +630,11 @@ export default function Page() {
     const newMembers = members.map((x) => (x.id === id ? { ...x, points: newPoints } : x));
     const newHistory = [...history, { memberId: id, tier }];
 
-    // هل ترقّى العضو في الترتيب؟
+    // هل تغيّر لقب العضو (ترقّى في الترتيب)؟
     const before = rankMembers(members, history).findIndex((x) => x.id === id);
     const after = rankMembers(newMembers, newHistory).findIndex((x) => x.id === id);
-    if (after < before) showToast(after === 0 ? `${m.name} صار علي بابا!` : `${m.name} ترقّى إلى ${ROLES[after].title}`);
+    const n = members.length;
+    if (after < before) showToast(`${m.name} ترقّى إلى ${ROLES[roleIndex(after, n)].title}`);
 
     setMembers(newMembers);
     setHistory(newHistory);
@@ -722,7 +726,7 @@ export default function Page() {
               </div>
               {total > 0 && (
                 <div className="font-title mt-3 text-xl text-[#f3d98a]">
-                  {ranked[0].name} هو علي بابا الآن
+                  {ranked[ranked.length - 1].name} هو علي بابا الآن
                 </div>
               )}
               <div className="mt-1 min-h-5 text-sm text-white/55">{lastName && lastEntry ? `آخر تسجيل: ${lastName} (+${TIERS[lastEntry.tier].value} قروش)` : "اضغط +1 بجانب أي عضو لتبدأ"}</div>
@@ -735,7 +739,7 @@ export default function Page() {
         <section className="parchment px-6 py-3 sm:px-9">
           <ul className="divide-y divide-[var(--line)]">
             {ranked.map((m, i) => (
-              <MemberRow key={m.id} member={m} rank={i} money={moneyByMember[m.id] ?? 0} onRename={rename} onAdd={addPoint} />
+              <MemberRow key={m.id} member={m} role={roleIndex(i, ranked.length)} money={moneyByMember[m.id] ?? 0} onRename={rename} onAdd={addPoint} />
             ))}
           </ul>
           <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-[var(--line)] py-4 text-sm text-[var(--slate)]">
