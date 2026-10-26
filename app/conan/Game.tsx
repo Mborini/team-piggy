@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GAME_NAME, QUESTIONS, SECONDS_PER_QUESTION as T, TEACHER, TEAMS } from "./questions";
 import { playCorrect, playFinish, playTick, playWrong, unlockAudio } from "./sound";
 
-const SCHOOL = "أكاديمية المجددون الدولية";
+const SCHOOL = "أكاديمية ومدارس المجددون الدولية";
 
 type Phase = "intro" | "play" | "end";
 const LETTERS = ["أ", "ب", "ج", "د"];
@@ -128,7 +128,7 @@ export default function Game() {
         </div>
       </div>
       <div className="meta">
-        <div className="teacher"><small>المشرف</small><b>{TEACHER}</b></div>
+        <div className="teacher"><small>إعداد</small><b>{TEACHER}</b></div>
         <button className="icon" onClick={fullscreen} aria-label="ملء الشاشة" title="ملء الشاشة">⛶</button>
       </div>
     </header>

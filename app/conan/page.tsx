@@ -1,11 +1,14 @@
-import Game from "./Game";
+import Experience from "./Experience";
 
-export const metadata = { title: "المحقق الذكي", description: "لعبة أسئلة تنافسية بإشراف الأستاذ حسن الساكت" };
+export const metadata = {
+  title: "المحقق الذكي",
+  description: "لعبة أسئلة تنافسية، إعداد الأستاذ حسن الساكت، أكاديمية ومدارس المجددون الدولية",
+};
 
 export default function Page() {
   return (
     <div className="conan">
-      <Game />
+      <Experience />
     </div>
   );
 }
