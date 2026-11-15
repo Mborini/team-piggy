@@ -1,789 +1,980 @@
+﻿/* eslint-disable @next/next/no-img-element -- photographs are optimized local WebP assets. */
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useAnimation, useReducedMotion } from "framer-motion";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import Link from "next/link";
+import {
+  DEFAULT_MEMBERS,
+  DESSERTS,
+  MAX_POINTS,
+  POINT_QIRSH,
+  isGameState,
+  pickDessert,
+  rotationFor,
+  removePoint,
+  type GameState,
+} from "@/lib/game";
+import credits from "@/public/desserts/credits.json";
+import { monthEnd, timeRemaining } from "@/lib/month-end";
 
-/* ───────────── الأنواع والثوابت ───────────── */
-type Tier = "silver" | "bronze" | "gold";
-type Member = { id: number; name: string; points: number };
-type Entry = { memberId: number; tier: Tier };
-type Status = "loading" | "saved" | "saving" | "error" | "offline";
-
-const MUTE_KEY = "team-piggy-muted";
-const MAX_VISIBLE_COINS = 100;
-const DEFAULT_MEMBERS: Member[] = ["نائل", "Borini", "نايف", "خلايلة", "زياد", "مجدي"].map((name, i) => ({
-  id: i + 1,
-  name,
-  points: 0,
-}));
-
-// value = قيمة الكوين بالقروش، from = أول نقطة في الفئة
-const TIERS: Record<Tier, { label: string; value: number; from: number; main: string; light: string; dark: string; next?: { at: number; label: string } }> = {
-  silver: { label: "فضي", value: 10, from: 0, main: "#9aa7b6", light: "#eef2f6", dark: "#5d6a79", next: { at: 16, label: "البرونز" } },
-  bronze: { label: "برونز", value: 15, from: 16, main: "#b8733a", light: "#f0b988", dark: "#6e3d16", next: { at: 26, label: "الذهبي" } },
-  gold: { label: "ذهبي", value: 20, from: 26, main: "#d4a02a", light: "#fbe28a", dark: "#7d5a07" },
-};
-// 0–15 فضي (10 قروش)، 16–25 برونز (15 قروش)، 26+ ذهبي (20 قرش)
-const getTier = (p: number): Tier => (p >= 26 ? "gold" : p >= 16 ? "bronze" : "silver");
-const dinar = (q: number) => (q / 100).toFixed(2); // 100 قرش = 1 دينار
-
-/* ───────────── الألقاب والشخصيات ───────────── */
-type Role = {
-  title: string;
-  skin: string;
-  cloth: string;
-  bg: [string, string];
-  hat: "turban" | "fez" | "scarf" | "straw";
-  hatColor: string;
-  beard: "short" | "full" | "goatee" | "stubble" | "none";
-  beardColor: string;
-  mood: "smile" | "stern" | "smirk" | "grin" | "tired";
-  extra?: "patch" | "freckles" | "sweat" | "carrot";
-};
-
-// علي بابا (الأول بالمصفوفة) يُعطى لصاحب أقل النقاط، والباقي حسب الترتيب من الأعلى نقاطاً. غيّر الألقاب من هنا فقط.
-const ROLES: Role[] = [
-  { title: "علي بابا", skin: "#e0ae83", cloth: "#1f7a6d", bg: ["#35a394", "#14574f"], hat: "turban", hatColor: "#f3ecd8", beard: "short", beardColor: "#5c4a3a", mood: "smile" },
-  { title: "زعيم الحرامية", skin: "#c58a60", cloth: "#5a1220", bg: ["#a3243a", "#4a0f1a"], hat: "turban", hatColor: "#1a1722", beard: "full", beardColor: "#15110f", mood: "stern", extra: "patch" },
-  { title: "مساعد الزعيم", skin: "#cf9970", cloth: "#4b2d6e", bg: ["#7447ad", "#33194f"], hat: "turban", hatColor: "#6a2f8f", beard: "goatee", beardColor: "#1f1a22", mood: "smirk" },
-  { title: "صبي الزعيم", skin: "#e8bd94", cloth: "#c0432f", bg: ["#e09a35", "#8a4d0f"], hat: "fez", hatColor: "#b3262a", beard: "none", beardColor: "#000", mood: "grin", extra: "freckles" },
-  { title: "خادم الزعيم", skin: "#c9946d", cloth: "#6e6a60", bg: ["#8795a3", "#3e4650"], hat: "scarf", hatColor: "#9aa393", beard: "none", beardColor: "#000", mood: "tired", extra: "sweat" },
-  { title: "سائس الحمار", skin: "#d8a77a", cloth: "#7a5a2c", bg: ["#7fa23f", "#3a4f1c"], hat: "straw", hatColor: "#e3c56a", beard: "stubble", beardColor: "#4a3a2a", mood: "smile", extra: "carrot" },
-];
-
-// الأخير (أقل نقاط) = علي بابا (ROLES[0])، وباقي الترتيب من الأعلى يأخذ الألقاب 1..5
-const roleIndex = (rank: number, total: number) => (rank === total - 1 ? 0 : rank + 1);
-
-// الترتيب: الأعلى نقاطاً أولاً. عند التعادل: من وصل للنقاط أولاً يتقدّم.
-function rankMembers(members: Member[], history: Entry[]): Member[] {
-  const last: Record<number, number> = {};
-  history.forEach((h, i) => {
-    last[h.memberId] = i;
-  });
-  return [...members].sort((a, b) => b.points - a.points || (last[a.id] ?? -1) - (last[b.id] ?? -1) || a.id - b.id);
-}
-
-/* ───────────── الصوت ───────────── */
-function useSound() {
-  const ctxRef = useRef<AudioContext | null>(null);
-  const [muted, setMuted] = useState(false);
-  const mutedRef = useRef(false);
-  mutedRef.current = muted;
-
-  const tone = useCallback((freqs: number[], type: OscillatorType, dur: number, vol: number) => {
-    if (mutedRef.current) return;
-    try {
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      if (!ctxRef.current) ctxRef.current = new AC();
-      const ctx = ctxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
-      const t0 = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = type;
-      freqs.forEach((f, i) => osc.frequency.setValueAtTime(f, t0 + (i * dur) / freqs.length));
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.05);
-    } catch {}
-  }, []);
-
-  return {
-    muted,
-    setMuted,
-    coin: useCallback(() => tone([988, 1319], "square", 0.28, 0.06), [tone]),
-    undo: useCallback(() => tone([392, 262], "triangle", 0.22, 0.12), [tone]),
+type IconName =
+  | "cake"
+  | "wheel"
+  | "users"
+  | "clock"
+  | "coin"
+  | "arrow"
+  | "plus"
+  | "undo"
+  | "check"
+  | "close";
+function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    cake: (
+      <>
+        <path d="M4 13h16v7H4zM3 13v-3h18v3M8 10V6m8 4V6M12 10V4M4 15q2 3 4 0 2 3 4 0 2 3 4 0 2 3 4 0" />
+        <path d="M12 2v.2M8 4v.2M16 4v.2" />
+      </>
+    ),
+    wheel: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="2" />
+        <path d="M12 3v7m0 4v7M3 12h7m4 0h7M5.6 5.6l5 5m2.8 2.8 5 5m0-12.8-5 5m-2.8 2.8-5 5" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 20v-2a6 6 0 0 1 12 0v2m2-15a3 3 0 0 1 0 6m2 3a5 5 0 0 1 2 4v2" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    coin: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M15 8h-4a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4H9m3-10v2m0 8v2" />
+      </>
+    ),
+    arrow: <path d="M19 12H5m6-6-6 6 6 6" />,
+    plus: <path d="M12 5v14M5 12h14" />,
+    undo: (
+      <>
+        <path d="M4 10h10a6 6 0 1 1 0 12M4 10l5-5M4 10l5 5" />
+      </>
+    ),
+    check: <path d="m5 12 4 4L19 6" />,
+    close: <path d="m6 6 12 12M6 18 18 6" />,
   };
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
 }
+const num = (n: number) => new Intl.NumberFormat("ar-JO").format(n);
+const money = (points: number) => ((points * POINT_QIRSH) / 100).toFixed(2);
+const date = (at: string) =>
+  new Intl.DateTimeFormat("ar-JO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Amman",
+  }).format(new Date(at));
+const INITIAL: GameState = { members: DEFAULT_MEMBERS, history: [], draws: [] };
 
-/* ───────────── عدّاد متحرك ───────────── */
-function AnimatedNumber({ value }: { value: number }) {
-  const [shown, setShown] = useState(value);
-  const fromRef = useRef(value);
+function MonthCountdown() {
+  const [clock, setClock] = useState<{
+    deadline: number;
+    label: string;
+    now: number;
+  } | null>(null);
   useEffect(() => {
-    const from = fromRef.current;
-    const start = performance.now();
-    let raf = 0;
-    const step = (now: number) => {
-      const p = Math.min((now - start) / 450, 1);
-      setShown(Math.round(from + (value - from) * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) raf = requestAnimationFrame(step);
-      else fromRef.current = value;
+    const target = monthEnd(new Date());
+    const tick = () => setClock({ ...target, now: Date.now() });
+    const first = setTimeout(tick, 0);
+    const interval = setInterval(tick, 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(interval);
     };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [value]);
-  return <>{shown}</>;
-}
-
-/* ───────────── الأفاتار ───────────── */
-function Avatar({ role, size = 64 }: { role: number; size?: number }) {
-  const r = ROLES[role];
-  const id = `av${role}`;
-  const hasBeard = r.beard === "short" || r.beard === "full" || r.beard === "goatee";
-  const brow = r.beard === "none" || r.beard === "stubble" ? "#3b2a1c" : r.beardColor;
-  const mouth = hasBeard ? "#e9b9a0" : "#7a2e22";
-
-  const browPaths: Record<Role["mood"], [string, string]> = {
-    smile: ["M36 44 Q41 41 47 44", "M53 44 Q59 41 64 44"],
-    grin: ["M36 44 Q41 41 47 44", "M53 44 Q59 41 64 44"],
-    stern: ["M36 41 L47 45", "M64 41 L53 45"],
-    smirk: ["M36 44 Q41 42 47 44", "M53 41 Q59 38 64 43"],
-    tired: ["M36 46 Q41 44 47 45", "M53 45 Q59 44 64 46"],
-  };
-  const mouthPaths: Record<Role["mood"], string> = {
-    smile: "M43 64 Q50 70 57 64",
-    stern: "M44 66 H56",
-    smirk: "M44 66 Q51 68 58 63",
-    grin: "M42 63 Q50 74 58 63 Z",
-    tired: "M44 67 Q50 64 56 67",
-  };
-
+  }, []);
+  const remaining = clock ? timeRemaining(clock.deadline, clock.now) : null;
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label={r.title}>
-      <defs>
-        <linearGradient id={`${id}-bg`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={r.bg[0]} />
-          <stop offset="1" stopColor={r.bg[1]} />
-        </linearGradient>
-        <clipPath id={`${id}-c`}>
-          <circle cx="50" cy="50" r="48" />
-        </clipPath>
-      </defs>
-      <g clipPath={`url(#${id}-c)`}>
-        <rect width="100" height="100" fill={`url(#${id}-bg)`} />
-        {/* العنق والثياب */}
-        <rect x="43" y="64" width="14" height="14" fill={r.skin} />
-        <path d="M8 100 Q12 76 50 73 Q88 76 92 100 Z" fill={r.cloth} />
-        <path d="M38 74 L50 90 L62 74" fill="none" stroke="#e3b94d" strokeWidth="2.2" />
-        {/* الأذنان والرأس */}
-        <circle cx="29" cy="53" r="4.5" fill={r.skin} />
-        <circle cx="71" cy="53" r="4.5" fill={r.skin} />
-        <ellipse cx="50" cy="50" rx="21" ry="24" fill={r.skin} />
-        <circle cx="36" cy="58" r="4" fill="rgba(220,90,70,.18)" />
-        <circle cx="64" cy="58" r="4" fill="rgba(220,90,70,.18)" />
-        {r.extra === "freckles" && (
-          <g fill="#b9724a">
-            <circle cx="35" cy="57" r=".9" /><circle cx="39" cy="59" r=".9" /><circle cx="37" cy="61" r=".9" />
-            <circle cx="65" cy="57" r=".9" /><circle cx="61" cy="59" r=".9" /><circle cx="63" cy="61" r=".9" />
-          </g>
-        )}
-        {/* العينان والحاجبان والأنف */}
-        {[42, 58].map((cx) => (
-          <g key={cx}>
-            <ellipse cx={cx} cy="50" rx="4.2" ry={r.mood === "tired" ? 2.4 : 3.2} fill="#fff" />
-            <circle cx={cx} cy={r.mood === "tired" ? 50.6 : 50} r="2" fill="#1c1512" />
-          </g>
-        ))}
-        <path d={browPaths[r.mood][0]} fill="none" stroke={brow} strokeWidth="2.2" strokeLinecap="round" />
-        <path d={browPaths[r.mood][1]} fill="none" stroke={brow} strokeWidth="2.2" strokeLinecap="round" />
-        <path d="M50 52 Q47 59 51 60" fill="none" stroke="rgba(90,50,20,.45)" strokeWidth="1.6" strokeLinecap="round" />
-        {/* اللحية */}
-        {r.beard === "short" && (
-          <>
-            <path d="M30 54 Q32 72 50 74 Q68 72 70 54 Q66 62 50 63 Q34 62 30 54 Z" fill={r.beardColor} />
-            <path d="M40 60 Q50 56 60 60 Q50 63 40 60 Z" fill={r.beardColor} />
-          </>
-        )}
-        {r.beard === "full" && (
-          <>
-            <path d="M28 50 Q26 86 50 90 Q74 86 72 50 Q66 70 50 70 Q34 70 28 50 Z" fill={r.beardColor} />
-            <path d="M37 61 Q50 54 63 61 Q50 65 37 61 Z" fill={r.beardColor} />
-          </>
-        )}
-        {r.beard === "goatee" && (
-          <>
-            <path d="M44 66 Q50 84 56 66 Q50 70 44 66 Z" fill={r.beardColor} />
-            <path d="M38 60 Q44 56 50 60 Q56 56 62 60 Q56 64 50 62 Q44 64 38 60 Z" fill={r.beardColor} />
-          </>
-        )}
-        {r.beard === "stubble" && <path d="M30 56 Q32 72 50 74 Q68 72 70 56 Q66 66 50 67 Q34 66 30 56 Z" fill={r.beardColor} opacity=".28" />}
-        {/* الفم */}
-        <path d={mouthPaths[r.mood]} fill={r.mood === "grin" ? "#fff" : "none"} stroke={mouth} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        {/* تفاصيل خاصة */}
-        {r.extra === "patch" && (
-          <>
-            <path d="M28 46 L72 40" stroke="#121018" strokeWidth="1.8" />
-            <ellipse cx="42" cy="50" rx="6.5" ry="5.5" fill="#121018" />
-            <path d="M62 44 L57 60" stroke="#8a3b2c" strokeWidth="1.4" strokeLinecap="round" />
-          </>
-        )}
-        {r.extra === "sweat" && <path d="M76 36 Q80 44 76 48 Q72 44 76 36 Z" fill="#8fd3ff" />}
-        {r.extra === "carrot" && (
-          <>
-            <path d="M58 65 L86 60 L60 70 Z" fill="#f08a1c" />
-            <path d="M86 60 L92 55 M86 60 L93 61" stroke="#4f9a2f" strokeWidth="2" strokeLinecap="round" />
-          </>
-        )}
-        {/* غطاء الرأس */}
-        {r.hat === "turban" && (
-          <>
-            <ellipse cx="50" cy="15" rx="10" ry="7" fill={r.hatColor} />
-            <path d="M26 40 C24 12 76 12 74 40 C62 32 38 32 26 40 Z" fill={r.hatColor} />
-            <path d="M29 31 Q50 21 71 31 M27 36 Q50 27 73 36" fill="none" stroke="rgba(0,0,0,.28)" strokeWidth="1.6" />
-            <circle cx="50" cy="27" r="3.2" fill="#e3b94d" stroke="#8f6a1c" strokeWidth=".8" />
-          </>
-        )}
-        {r.hat === "fez" && (
-          <>
-            <path d="M33 38 L37 14 Q50 8 63 14 L67 38 Z" fill={r.hatColor} />
-            <rect x="33" y="34" width="34" height="4" fill="#e3b94d" />
-            <path d="M63 14 Q80 14 78 33" fill="none" stroke="#e3b94d" strokeWidth="2" />
-            <circle cx="78" cy="35" r="3" fill="#e3b94d" />
-          </>
-        )}
-        {r.hat === "scarf" && (
-          <>
-            <path d="M25 42 Q24 16 50 15 Q76 16 75 42 Q74 32 50 30 Q26 32 25 42 Z" fill={r.hatColor} />
-            <ellipse cx="73" cy="38" rx="6" ry="4.5" fill={r.hatColor} stroke="rgba(0,0,0,.25)" />
-          </>
-        )}
-        {r.hat === "straw" && (
-          <>
-            <ellipse cx="50" cy="34" rx="34" ry="8" fill={r.hatColor} stroke="#9a7a2c" strokeWidth="1.2" />
-            <path d="M35 34 Q35 12 50 12 Q65 12 65 34 Z" fill={r.hatColor} stroke="#9a7a2c" strokeWidth="1.2" />
-            <path d="M35 30 Q50 34 65 30" fill="none" stroke="#b3262a" strokeWidth="3.4" />
-          </>
-        )}
-      </g>
-      <circle cx="50" cy="50" r="48" fill="none" stroke="#e3b94d" strokeWidth="3" />
-    </svg>
-  );
-}
-
-/* ───────────── خلفية الكهف ───────────── */
-function CaveBackdrop() {
-  return (
-    <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 500 640" preserveAspectRatio="xMidYMax slice">
-      <defs>
-        <linearGradient id="cave" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#0d0c2b" />
-          <stop offset="1" stopColor="#2a1b4d" />
-        </linearGradient>
-        <radialGradient id="treasure" cx="50%" cy="100%" r="60%">
-          <stop offset="0" stopColor="#ffd25a" stopOpacity=".55" />
-          <stop offset="1" stopColor="#ffd25a" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <rect width="500" height="640" fill="#1c1747" />
-      <g fill="#f3d98a">
-        {[[60, 40, 1.6], [150, 80, 1.1], [330, 36, 1.4], [440, 90, 1.8], [250, 20, 1], [400, 150, 1]].map(([x, y, s], i) => (
-          <circle key={i} cx={x} cy={y} r={s} opacity=".8" />
-        ))}
-      </g>
-      <path d="M52 70 a26 26 0 1 0 22 40 a20 20 0 1 1 -22 -40 Z" fill="#f3d98a" opacity=".9" />
-      <path d="M40 640 L40 250 C40 120 130 60 250 40 C370 60 460 120 460 250 L460 640 Z" fill="url(#cave)" stroke="#e3b94d" strokeOpacity=".55" strokeWidth="3" />
-      <path d="M62 640 L62 255 C62 138 142 84 250 66 C358 84 438 138 438 255 L438 640 Z" fill="none" stroke="#e3b94d" strokeOpacity=".25" strokeWidth="1.5" />
-      <rect y="320" width="500" height="320" fill="url(#treasure)" />
-    </svg>
-  );
-}
-
-/* ───────────── حصالة الحمار الزجاجية ───────────── */
-type Drop = { key: number; tier: Tier; dir: "in" | "out" } | null;
-
-function CoinDefs() {
-  return (
-    <>
-      {(Object.keys(TIERS) as Tier[]).map((t) => (
-        <radialGradient key={t} id={`cg-${t}`} cx="35%" cy="30%" r="90%">
-          <stop offset="0%" stopColor={TIERS[t].light} />
-          <stop offset="55%" stopColor={TIERS[t].main} />
-          <stop offset="100%" stopColor={TIERS[t].dark} />
-        </radialGradient>
-      ))}
-    </>
-  );
-}
-
-function DonkeyBank({ coins, drop, shakeKey }: { coins: Tier[]; drop: Drop; shakeKey: number }) {
-  const controls = useAnimation();
-  const reduce = useReducedMotion();
-
-  useEffect(() => {
-    if (shakeKey === 0 || reduce) return;
-    controls.start({
-      rotate: [0, -1.4, 1.1, -0.5, 0],
-      scaleY: [1, 0.98, 1.012, 1],
-      transition: { duration: 0.5, delay: 0.3 },
-    });
-  }, [shakeKey, controls, reduce]);
-
-  const visible = coins.slice(-MAX_VISIBLE_COINS);
-  const offset = coins.length - visible.length;
-
-  return (
-    <svg viewBox="0 -30 480 410" className="relative mx-auto h-auto w-full max-w-[520px]" role="img" aria-label={`الحمار يحمل ${coins.length} كوين`}>
-      <defs>
-        <CoinDefs />
-        <clipPath id="bodyClip">
-          <ellipse cx="240" cy="185" rx="150" ry="84" />
-        </clipPath>
-        <linearGradient id="glass" x1="0" y1="0" x2="0.4" y2="1">
-          <stop offset="0%" stopColor="#e6e2f5" stopOpacity=".5" />
-          <stop offset="55%" stopColor="#a9a3c9" stopOpacity=".26" />
-          <stop offset="100%" stopColor="#6e6a99" stopOpacity=".5" />
-        </linearGradient>
-        <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#fff" stopOpacity=".9" />
-          <stop offset="50%" stopColor="#b7b1d6" stopOpacity=".6" />
-          <stop offset="100%" stopColor="#5a5684" stopOpacity=".95" />
-        </linearGradient>
-        <linearGradient id="donkey" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#bdb2a9" />
-          <stop offset="100%" stopColor="#7b716b" />
-        </linearGradient>
-        <linearGradient id="muzzle" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f6ecde" />
-          <stop offset="100%" stopColor="#d9cbb7" />
-        </linearGradient>
-        <linearGradient id="blanket" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#b3202f" />
-          <stop offset="100%" stopColor="#7a1220" />
-        </linearGradient>
-        <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f3d98a" />
-          <stop offset="100%" stopColor="#8f6a1c" />
-        </linearGradient>
-        <radialGradient id="floorGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#000" stopOpacity=".6" />
-          <stop offset="100%" stopColor="#000" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-
-      <ellipse cx="245" cy="342" rx="200" ry="15" fill="url(#floorGlow)" />
-
-      <motion.g animate={controls} style={{ transformOrigin: "240px 338px" }}>
-        {/* الأرجل البعيدة والذيل */}
-        <rect x="146" y="236" width="26" height="100" rx="12" fill="#6a615c" />
-        <rect x="346" y="236" width="26" height="100" rx="12" fill="#6a615c" />
-        <rect x="146" y="322" width="26" height="14" rx="5" fill="#2c2623" />
-        <rect x="346" y="322" width="26" height="14" rx="5" fill="#2c2623" />
-        <path d="M94 140 C56 150 50 200 64 240" fill="none" stroke="#5b524d" strokeWidth="9" strokeLinecap="round" />
-        <ellipse cx="64" cy="248" rx="9" ry="15" fill="#3f3834" />
-
-        {/* الأذنان الطويلتان */}
-        <path d="M384 62 Q370 6 388 -18 Q416 0 412 58 Z" fill="#8a807a" />
-        <path d="M390 52 Q382 10 391 -6 Q406 8 404 50 Z" fill="#d9a7a0" opacity=".8" />
-        <path d="M404 56 Q408 -2 432 -22 Q452 2 434 62 Z" fill="#9a8f88" />
-        <path d="M412 50 Q414 6 430 -8 Q440 8 428 52 Z" fill="#d9a7a0" opacity=".85" />
-
-        {/* العنق والرأس */}
-        <path d="M330 112 L368 56 L424 84 L396 196 Q360 202 330 190 Z" fill="url(#donkey)" stroke="#6a615c" strokeWidth="2" />
-        <ellipse cx="414" cy="92" rx="46" ry="32" transform="rotate(32 414 92)" fill="url(#donkey)" stroke="#6a615c" strokeWidth="2" />
-        <ellipse cx="446" cy="128" rx="26" ry="21" fill="url(#muzzle)" stroke="#b9a98f" strokeWidth="2" />
-        <ellipse cx="457" cy="124" rx="4" ry="6.5" fill="#4a3f3a" />
-        <path d="M436 142 Q448 148 460 140" fill="none" stroke="#4a3f3a" strokeWidth="2.2" strokeLinecap="round" />
-        <ellipse cx="410" cy="84" rx="10" ry="8" fill="#f6ecde" />
-        <circle cx="410" cy="84" r="6.5" fill="#1c1512" />
-        <circle cx="407.5" cy="81.5" r="2.3" fill="#fff" />
-        {/* العُرف واللجام */}
-        <path d="M396 60 Q404 40 414 58" fill="none" stroke="#4b4540" strokeWidth="6" strokeLinecap="round" />
-        <path d="M372 58 Q356 72 366 90 Q348 102 362 120 Q346 134 360 152" fill="none" stroke="#4b4540" strokeWidth="9" strokeLinecap="round" />
-        <path d="M430 112 Q450 114 466 126" fill="none" stroke="#e3b94d" strokeWidth="4" strokeLinecap="round" />
-        <path d="M404 96 L426 124" fill="none" stroke="#e3b94d" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="426" cy="124" r="3.6" fill="#f3d98a" stroke="#8f6a1c" />
-
-        {/* داخل الجسم الزجاجي والكوينز */}
-        <ellipse cx="240" cy="185" rx="150" ry="84" fill="#16183a" opacity=".62" />
-        <g clipPath="url(#bodyClip)">
-          {visible.map((tier, i) => {
-            const row = Math.floor(i / 10);
-            const col = i % 10;
-            const x = 112 + col * 28 + (row % 2) * 14 + (((i * 37) % 7) - 3);
-            const y = 262 - row * 12 + (((i * 13) % 5) - 2);
-            return (
-              <g key={offset + i}>
-                <ellipse cx={x} cy={y + 3} rx="14" ry="8.5" fill={TIERS[tier].dark} />
-                <ellipse cx={x} cy={y} rx="14" ry="8.5" fill={`url(#cg-${tier})`} stroke={TIERS[tier].dark} strokeWidth="1" />
-                <ellipse cx={x} cy={y} rx="8.5" ry="4.8" fill="none" stroke={TIERS[tier].dark} strokeOpacity=".45" />
-              </g>
-            );
-          })}
-        </g>
-
-        {/* طبقة الزجاج */}
-        <ellipse cx="240" cy="185" rx="152" ry="86" fill="url(#glass)" stroke="url(#rim)" strokeWidth="4" />
-        <path d="M110 150 Q128 112 190 100" fill="none" stroke="#fff" strokeOpacity=".7" strokeWidth="8" strokeLinecap="round" />
-        <circle cx="102" cy="172" r="3.6" fill="#fff" opacity=".8" />
-        <path d="M368 150 Q378 184 362 216" fill="none" stroke="#fff" strokeOpacity=".25" strokeWidth="6" strokeLinecap="round" />
-        <path d="M132 240 Q240 274 350 236" fill="none" stroke="#fff" strokeOpacity=".15" strokeWidth="5" strokeLinecap="round" />
-
-        {/* الأرجل القريبة */}
-        <rect x="104" y="236" width="28" height="100" rx="13" fill="url(#donkey)" stroke="#6a615c" strokeWidth="2" />
-        <rect x="306" y="236" width="28" height="100" rx="13" fill="url(#donkey)" stroke="#6a615c" strokeWidth="2" />
-        <rect x="104" y="322" width="28" height="14" rx="5" fill="#2c2623" />
-        <rect x="306" y="322" width="28" height="14" rx="5" fill="#2c2623" />
-
-        {/* سرج الحمار وفتحة العملات */}
-        <path d="M168 98 Q240 84 312 98 L304 156 Q240 168 176 156 Z" fill="url(#blanket)" stroke="#e3b94d" strokeWidth="3" />
-        <path d="M190 128 l14 -12 l14 12 l-14 12 Z M233 128 l14 -12 l14 12 l-14 12 Z M276 128 l14 -12 l14 12 l-14 12 Z" fill="none" stroke="#f3d98a" strokeWidth="2" />
-        {[186, 208, 232, 256, 280, 302].map((x) => (
-          <circle key={x} cx={x} cy="162" r="3" fill="#e3b94d" />
-        ))}
-        <rect x="205" y="84" width="70" height="14" rx="7" fill="url(#brass)" />
-        <rect x="213" y="88" width="54" height="6" rx="3" fill="#1b0f18" />
-      </motion.g>
-
-      {/* الكوين الساقط / الصاعد */}
-      <AnimatePresence>
-        {drop && (
-          <motion.g key={drop.key} exit={{ opacity: 0 }}>
-            <motion.ellipse
-              cx="240"
-              fill={`url(#cg-${drop.tier})`}
-              stroke={TIERS[drop.tier].dark}
-              strokeWidth="2.5"
-              initial={{ cy: drop.dir === "in" ? -20 : 90, opacity: 1, rx: 17, ry: 17 }}
-              animate={
-                reduce
-                  ? { cy: 90, opacity: 0 }
-                  : {
-                      cy: drop.dir === "in" ? 90 : -20,
-                      rx: [17, 4, 17, 4, 12],
-                      ry: [17, 17, 17, 17, 12],
-                      opacity: drop.dir === "in" ? [1, 1, 1, 0] : [1, 1, 0],
-                    }
-              }
-              transition={{ duration: 0.55, ease: "easeIn" }}
-            />
-          </motion.g>
-        )}
-      </AnimatePresence>
-    </svg>
-  );
-}
-
-/* ───────────── شارة الفئة ───────────── */
-function TierBadge({ tier }: { tier: Tier }) {
-  const t = TIERS[tier];
-  return (
-    <motion.span
-      key={tier}
-      initial={{ scale: 0.7 }}
-      animate={{ scale: 1 }}
-      transition={{ type: "spring", stiffness: 420, damping: 15 }}
-      className="inline-flex w-[84px] items-center justify-center gap-2 rounded-full py-1 text-sm font-semibold"
-      style={{ background: `${t.main}26`, color: t.dark, boxShadow: `inset 0 0 0 1.5px ${t.main}` }}
+    <section
+      className="month-countdown"
+      aria-label="العد التنازلي للمّة نهاية الشهر"
     >
-      <span className="h-3 w-3 rounded-full" style={{ background: `radial-gradient(circle at 35% 30%, ${t.light}, ${t.main} 60%, ${t.dark})` }} />
-      {t.label}
-    </motion.span>
-  );
-}
-
-/* ───────────── صف العضو ───────────── */
-function MemberRow({ member, role, money, onRename, onAdd }: { member: Member; role: number; money: number; onRename: (id: number, n: string) => void; onAdd: (id: number) => void }) {
-  const tier = getTier(member.points);
-  const t = TIERS[tier];
-  const next = t.next;
-  const pct = next ? Math.min(100, ((member.points - t.from) / (next.at - t.from)) * 100) : 100;
-
-  return (
-    <motion.li
-      layout="position"
-      transition={{ type: "spring", stiffness: 380, damping: 34 }}
-      className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-3 py-4 sm:grid-cols-[auto_minmax(0,1.1fr)_auto_minmax(0,1fr)_auto_auto]"
-    >
-      <motion.div
-        key={role}
-        initial={{ scale: 0.8, rotate: -6 }}
-        animate={{ scale: 1, rotate: 0 }}
-        transition={{ type: "spring", stiffness: 380, damping: 16 }}
-        className="rounded-full"
-        style={role === 0 ? { boxShadow: "0 0 0 3px #f3e4c0, 0 0 22px 4px rgba(227,185,77,.75)" } : undefined}
+      <div className="countdown-copy">
+        <span className="countdown-icon">
+          <Icon name="clock" size={25} />
+        </span>
+        <div>
+          <h2>
+            {remaining?.finished
+              ? "حان موعد اللمّة الحلوة!"
+              : "ناطرين لمّة آخر الشهر"}
+          </h2>
+          <p>
+            {clock
+              ? `نهاية ${clock.label} · بتوقيت عمّان`
+              : "نهاية الشهر · بتوقيت عمّان"}
+          </p>
+        </div>
+      </div>
+      <div
+        className="countdown-units"
+        role="timer"
+        aria-label="الوقت المتبقي حتى نهاية الشهر"
       >
-        <Avatar role={role} size={64} />
-      </motion.div>
-
-      <div className="min-w-0">
-        <input
-          value={member.name}
-          onChange={(e) => onRename(member.id, e.target.value)}
-          maxLength={20}
-          aria-label={`اسم العضو ${member.name}`}
-          className="w-full min-w-0 rounded-md bg-transparent px-1 text-lg font-bold hover:bg-black/[.05] focus:bg-black/[.05]"
-        />
-        <div className="font-title px-1 text-lg leading-tight" style={{ color: role === 0 ? "#9a6f12" : "#6b4a2b" }}>
-          {ROLES[role].title}
-        </div>
-      </div>
-
-      <div className="justify-self-end sm:justify-self-auto">
-        <TierBadge tier={tier} />
-      </div>
-
-      <div className="col-span-3 sm:col-span-1">
-        <div className="h-2 overflow-hidden rounded-full bg-[var(--line)]" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
-          <motion.div className="h-full rounded-full" style={{ background: `linear-gradient(90deg, ${t.main}, ${t.light})` }} animate={{ width: `${pct}%` }} transition={{ type: "spring", stiffness: 160, damping: 22 }} />
-        </div>
-        <div className="mt-1 text-xs text-[var(--slate)]">{next ? `باقي ${next.at - member.points} للوصول إلى ${next.label}` : "أعلى فئة"}</div>
-      </div>
-
-      <div className="col-span-3 flex items-center justify-between gap-4 sm:contents">
-        <div className="min-w-[5.5rem] text-end">
-          <div className="num text-4xl font-bold leading-none" style={{ color: t.dark }}>
-            <AnimatedNumber value={member.points} />
+        {(
+          [
+            ["days", "يوم"],
+            ["hours", "ساعة"],
+            ["minutes", "دقيقة"],
+            ["seconds", "ثانية"],
+          ] as const
+        ).map(([key, label]) => (
+          <div className="countdown-unit" key={key}>
+            <strong>
+              {remaining ? num(remaining[key]).padStart(2, "٠") : "—"}
+            </strong>
+            <span>{label}</span>
           </div>
-          <div className="num mt-1 text-xs text-[var(--slate)]">{money} قرش</div>
-        </div>
-        <button
-          onClick={() => onAdd(member.id)}
-          aria-label={`أضف نقطة لـ ${member.name}`}
-          className="h-12 w-16 rounded-xl border border-[#e3b94d] bg-[linear-gradient(#3b2f86,#231a52)] text-lg font-bold text-[#f3d98a] shadow-[0_2px_0_#0b0830] transition hover:brightness-125 active:translate-y-px"
-        >
-          +1
-        </button>
+        ))}
       </div>
-    </motion.li>
+    </section>
   );
 }
 
-/* ───────────── الصفحة ───────────── */
 export default function Page() {
-  const [members, setMembers] = useState<Member[]>(DEFAULT_MEMBERS);
-  const [history, setHistory] = useState<Entry[]>([]);
+  const [game, setGame] = useState<GameState>(INITIAL);
   const [ready, setReady] = useState(false);
-  const [status, setStatus] = useState<Status>("loading");
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [drop, setDrop] = useState<Drop>(null);
-  const [shakeKey, setShakeKey] = useState(0);
-  const [toast, setToast] = useState<{ key: number; text: string } | null>(null);
-  const dropCounter = useRef(0);
-  const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sound = useSound();
+  const [status, setStatus] = useState<
+    "loading" | "saved" | "saving" | "error" | "offline"
+  >("loading");
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [duration, setDuration] = useState(4600);
+  const [notice, setNotice] = useState("");
+  const [tab, setTab] = useState<"play" | "history">("play");
+  const [showCredits, setShowCredits] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const editDialog = useRef<HTMLDialogElement>(null);
+  const resetDialog = useRef<HTMLDialogElement>(null);
+  const spinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spinLock = useRef(false);
+  const lastSaved = useRef("");
+  const currentSnapshot = useRef("");
+  const queue = useRef(Promise.resolve());
+  useEffect(() => {
+    currentSnapshot.current = JSON.stringify(game);
+  }, [game]);
 
-  // تحميل الحالة من قاعدة البيانات
   const load = useCallback(async () => {
-    setStatus("loading");
     try {
-      const r = await fetch("/api/state", { cache: "no-store" });
-      if (!r.ok) throw new Error();
-      const s = await r.json();
-      if (s && Array.isArray(s.members) && s.members.length === 6 && Array.isArray(s.history)) {
-        setMembers(s.members);
-        setHistory(s.history);
-      }
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) throw new Error("load");
+      const data = await response.json();
+      const state = { ...data, draws: data.draws ?? [] };
+      if (!isGameState(state)) throw new Error("invalid state");
+      lastSaved.current = JSON.stringify(state);
+      setGame(state);
+      const selected = DESSERTS.findIndex(
+        (d) => d.id === state.draws[0]?.dessertId,
+      );
+      setDuration(0);
+      setRotation(selected < 0 ? 0 : rotationFor(selected, 0) % 360);
       setReady(true);
       setStatus("saved");
     } catch {
-      setStatus("offline"); // لا نكتب شيئاً فوق البيانات إذا فشل التحميل
+      setStatus("offline");
     }
   }, []);
 
   useEffect(() => {
-    load();
-    try {
-      if (localStorage.getItem(MUTE_KEY) === "1") sound.setMuted(true);
-    } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const timer = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      if (spinTimer.current) clearTimeout(spinTimer.current);
+    };
+  }, [load]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(MUTE_KEY, sound.muted ? "1" : "0");
-    } catch {}
-  }, [sound.muted]);
+    if (!ready) return;
+    const snapshot = JSON.stringify(game);
+    if (snapshot === lastSaved.current) return;
+    const timer = setTimeout(() => {
+      setStatus("saving");
+      queue.current = queue.current.then(async () => {
+        // Superseded snapshots can be skipped; requests always run in order.
+        if (snapshot !== currentSnapshot.current) return;
+        // A request can have committed even if its response is lost. Until it
+        // succeeds, an undo back to the previous state must still be saved.
+        lastSaved.current = "";
+        try {
+          const response = await fetch("/api/state", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: snapshot,
+          });
+          if (!response.ok) throw new Error("save");
+          lastSaved.current = snapshot;
+          if (snapshot === currentSnapshot.current) setStatus("saved");
+        } catch {
+          setStatus("error");
+        }
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [game, ready, retry]);
 
-  // حفظ تلقائي في قاعدة البيانات
   useEffect(() => {
-    if (!ready) return;
-    setStatus("saving");
-    const t = setTimeout(async () => {
-      try {
-        const r = await fetch("/api/state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ members, history }),
-        });
-        setStatus(r.ok ? "saved" : "error");
-      } catch {
-        setStatus("error");
-      }
-    }, 200);
-    return () => clearTimeout(t);
-  }, [members, history, ready]);
+    const warn = (event: BeforeUnloadEvent) => {
+      if (
+        ready &&
+        (currentSnapshot.current !== lastSaved.current || spinLock.current)
+      )
+        event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [ready]);
 
-  const showDrop = (tier: Tier, dir: "in" | "out") => {
-    dropCounter.current += 1;
-    setDrop({ key: dropCounter.current, tier, dir });
-    if (dropTimer.current) clearTimeout(dropTimer.current);
-    dropTimer.current = setTimeout(() => setDrop(null), 700);
-  };
+  function addPoint(id: number) {
+    setGame((previous) => {
+      const player = previous.members.find((m) => m.id === id);
+      if (
+        !player ||
+        player.points >= MAX_POINTS ||
+        previous.history.length >= 599999
+      )
+        return previous;
+      return {
+        ...previous,
+        members: previous.members.map((m) =>
+          m.id === id ? { ...m, points: m.points + 1 } : m,
+        ),
+        history: [...previous.history, { memberId: id, tier: "silver" }],
+      };
+    });
+    setNotice(
+      `تمت إضافة نقطة لـ ${game.members.find((m) => m.id === id)?.name} · ٥ قروش`,
+    );
+  }
 
-  const showToast = (text: string) => {
-    setToast({ key: Date.now(), text });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
-  };
+  function undo() {
+    setGame((previous) => {
+      const last = previous.history.at(-1);
+      if (!last) return previous;
+      return {
+        ...previous,
+        members: previous.members.map((m) =>
+          m.id === last.memberId ? { ...m, points: m.points - 1 } : m,
+        ),
+        history: previous.history.slice(0, -1),
+      };
+    });
+    setNotice("تم التراجع عن آخر نقطة");
+  }
 
-  const addPoint = (id: number) => {
-    if (!ready) return;
-    const m = members.find((x) => x.id === id);
-    if (!m) return;
-    const newPoints = m.points + 1;
-    const tier = getTier(newPoints);
-    const newMembers = members.map((x) => (x.id === id ? { ...x, points: newPoints } : x));
-    const newHistory = [...history, { memberId: id, tier }];
+  function subtractPoint(id: number) {
+    setGame((previous) => removePoint(previous, id));
+    setNotice(
+      `تم خصم نقطة من ${game.members.find((m) => m.id === id)?.name} · ٥ قروش`,
+    );
+  }
 
-    // هل تغيّر لقب العضو (ترقّى في الترتيب)؟
-    const before = rankMembers(members, history).findIndex((x) => x.id === id);
-    const after = rankMembers(newMembers, newHistory).findIndex((x) => x.id === id);
-    const n = members.length;
-    if (after < before) showToast(`${m.name} ترقّى إلى ${ROLES[roleIndex(after, n)].title}`);
+  function spin() {
+    if (!ready || spinLock.current) return;
+    spinLock.current = true;
+    const index = pickDessert();
+    const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? 120
+      : 4600;
+    setDuration(ms);
+    setSpinning(true);
+    setRotation((previous) => rotationFor(index, previous));
+    setNotice("");
+    spinTimer.current = setTimeout(() => {
+      const draw = {
+        id: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`,
+        dessertId: DESSERTS[index].id,
+        at: new Date().toISOString(),
+      };
+      setGame((previous) => ({
+        ...previous,
+        draws: [draw, ...previous.draws].slice(0, 100),
+      }));
+      setSpinning(false);
+      spinLock.current = false;
+      setNotice(
+        `اختارت العجلة ${DESSERTS[index].name}؛ على اللاعبين إحضارها للجلسة!`,
+      );
+    }, ms);
+  }
 
-    setMembers(newMembers);
-    setHistory(newHistory);
-    showDrop(tier, "in");
-    setShakeKey((k) => k + 1);
-    sound.coin();
-  };
+  function saveNames(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setGame((previous) => ({
+      ...previous,
+      members: previous.members.map((m) => ({
+        ...m,
+        name: String(form.get(`name-${m.id}`)).trim(),
+      })),
+    }));
+    editDialog.current?.close();
+    setNotice("تم تحديث أسماء اللاعبين");
+  }
 
-  const undo = () => {
-    const last = history[history.length - 1];
-    if (!last || !ready) return;
-    setMembers((prev) => prev.map((x) => (x.id === last.memberId ? { ...x, points: Math.max(0, x.points - 1) } : x)));
-    setHistory((h) => h.slice(0, -1));
-    showDrop(last.tier, "out");
-    sound.undo();
-  };
-
-  const rename = (id: number, name: string) => setMembers((prev) => prev.map((x) => (x.id === id ? { ...x, name } : x)));
-
-  const resetAll = () => {
-    setMembers(DEFAULT_MEMBERS);
-    setHistory([]);
-    setConfirmReset(false);
-  };
-
-  const ranked = rankMembers(members, history);
-  const total = history.length;
-  const totalMoney = history.reduce((sum, h) => sum + TIERS[h.tier].value, 0);
-  const moneyByMember: Record<number, number> = {};
-  history.forEach((h) => {
-    moneyByMember[h.memberId] = (moneyByMember[h.memberId] ?? 0) + TIERS[h.tier].value;
-  });
-  const lastEntry = history[history.length - 1];
-  const lastName = lastEntry ? members.find((m) => m.id === lastEntry.memberId)?.name : null;
-
-  const statusText: Record<Status, string> = {
-    loading: "جارٍ التحميل…",
-    saved: "تم الحفظ في قاعدة البيانات",
-    saving: "جارٍ الحفظ…",
-    error: "تعذّر الحفظ — تحقق من الخادم",
-    offline: "تعذّر الاتصال بالخادم",
-  };
-  const statusColor = status === "error" || status === "offline" ? "#ff9d92" : "#c9bfa0";
-  const ghost = "rounded-lg border border-[#e3b94d]/40 bg-white/5 px-4 py-2 text-sm font-semibold text-[#f3e6c4] transition hover:bg-white/10";
+  const total = game.members.reduce((sum, m) => sum + m.points, 0);
+  const ranked = [...game.members].sort(
+    (a, b) => b.points - a.points || a.id - b.id,
+  );
+  const winner = DESSERTS.find((d) => d.id === game.draws[0]?.dessertId);
+  const statusText = {
+    loading: "جارٍ تحميل الجلسة",
+    saved: "كل التغييرات محفوظة",
+    saving: "جارٍ حفظ التغييرات",
+    error: "تعذّر الحفظ، أعد المحاولة",
+    offline: "تعذّر تحميل الجلسة",
+  }[status];
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-title text-4xl font-bold leading-tight text-[#f3d98a] sm:text-5xl">حصالة علي بابا</h1>
-          <div className="font-title text-xl text-[#e3b94d]/90">والأربعين حرامي</div>
-          <p className="mt-1 text-sm" style={{ color: statusColor }} aria-live="polite">
-            {statusText[status]}
-            {status === "offline" && (
-              <button onClick={load} className="ms-2 underline">
+    <div className="sweet-app">
+      <aside className="sidebar">
+        <Link className="brand" href="/" aria-label="حلا اللمة، الرئيسية">
+          <span className="brand-mark">
+            <Icon name="cake" size={29} />
+          </span>
+          <span>
+            حلا اللمّة<small>نقاطكم تحلّي جمعتكم</small>
+          </span>
+        </Link>
+        <div className="nav-label">مساحة الفريق</div>
+        <nav aria-label="القائمة الرئيسية">
+          <button
+            className={tab === "play" ? "nav-item active" : "nav-item"}
+            onClick={() => setTab("play")}
+          >
+            <Icon name="wheel" /> ساحة اللعب <span>01</span>
+          </button>
+          <button
+            className={tab === "history" ? "nav-item active" : "nav-item"}
+            onClick={() => setTab("history")}
+          >
+            <Icon name="clock" /> سجل اللمّات{" "}
+            <span>{num(game.draws.length)}</span>
+          </button>
+          <button
+            className="nav-item"
+            disabled={!ready}
+            onClick={() => editDialog.current?.showModal()}
+          >
+            <Icon name="users" /> إدارة اللاعبين
+          </button>
+        </nav>
+        <div className="sidebar-note">
+          <span className="small-star">✳</span>
+          <h3>
+            النقطة صغيرة،
+            <br />
+            واللمّة كبيرة.
+          </h3>
+          <p>
+            سجّلوا النقاط، لفّوا العجلة،
+            <br />
+            وخَلّوا الحلو علينا… وعليكم!
+          </p>
+          <span className="point-pill">١ نقطة = ٥ قروش</span>
+        </div>
+        <div className="sidebar-footer">
+          <span className="online-dot" /> صُنعت للأوقات الحلوة
+          <small>TEAM PIGGY · SWEET EDITION</small>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="breadcrumb">
+            مساحة الفريق <span>/</span>{" "}
+            <b>{tab === "play" ? "ساحة اللعب" : "سجل اللمّات"}</b>
+          </div>
+          <div className={`save-status ${status}`} role="status">
+            <span />
+            {statusText}
+            {(status === "offline" || status === "error") && (
+              <button
+                onClick={() =>
+                  status === "offline" ? void load() : setRetry((v) => v + 1)
+                }
+              >
                 إعادة المحاولة
               </button>
             )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={undo} disabled={history.length === 0} className={`${ghost} disabled:cursor-not-allowed disabled:opacity-40`}>
-            تراجع
-          </button>
-          <button onClick={() => sound.setMuted(!sound.muted)} aria-pressed={sound.muted} className={ghost}>
-            {sound.muted ? "تشغيل الصوت" : "كتم الصوت"}
-          </button>
-          <button onClick={() => setConfirmReset(true)} className="rounded-lg border border-[#ff9d92]/50 bg-white/5 px-4 py-2 text-sm font-semibold text-[#ffb4a8] transition hover:bg-[#ff9d92]/10">
-            تصفير
-          </button>
-        </div>
-      </header>
-
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* كهف الكنز */}
-        <section className="relative self-start overflow-hidden rounded-[28px] border border-[#e3b94d]/30 px-6 pb-8 pt-12 text-white lg:sticky lg:top-8" style={{ boxShadow: "0 30px 60px -30px #000" }}>
-          <CaveBackdrop />
-          <div className="relative">
-            <DonkeyBank coins={history.map((h) => h.tier)} drop={drop} shakeKey={shakeKey} />
-            <div className="mt-4 text-center">
-              <div className="flex items-baseline justify-center gap-3" style={{ color: "#f3d98a" }} aria-live="polite">
-                <span className="num text-7xl font-bold leading-none">
-                  <AnimatedNumber value={totalMoney} />
-                </span>
-                <span className="font-title text-3xl">قرش</span>
-              </div>
-              <div className="mt-2 text-base text-white/75">
-                {total} نقطة{totalMoney >= 100 ? ` · ${dinar(totalMoney)} دينار` : ""}
-              </div>
-              {total > 0 && (
-                <div className="font-title mt-3 text-xl text-[#f3d98a]">
-                  {ranked[ranked.length - 1].name} هو علي بابا الآن
-                </div>
-              )}
-              <div className="mt-1 min-h-5 text-sm text-white/55">{lastName && lastEntry ? `آخر تسجيل: ${lastName} (+${TIERS[lastEntry.tier].value} قروش)` : "اضغط +1 بجانب أي عضو لتبدأ"}</div>
-              {total > MAX_VISIBLE_COINS && <div className="mt-1 text-xs text-white/40">تُعرض آخر {MAX_VISIBLE_COINS} كوين داخل الحصالة</div>}
+          </div>
+        </header>
+        <section className="intro">
+          <div>
+            <div className="eyebrow">
+              <span /> شويّة منافسة، كثير حلا
             </div>
+            <h1>
+              {tab === "play"
+                ? "كل نقطة… بتقرّبنا للمّة أحلى."
+                : "لكل لمّة، حكاية حلوة."}
+            </h1>
+            <p>
+              {tab === "play"
+                ? "نقاط لكل لاعب، وعجلة تختار شو الحلو اللي عليكم تجيبوه."
+                : "اختيارات العجلة السابقة، محفوظة عشان ترجعولها بأي وقت."}
+            </p>
           </div>
+          <span className="session-tag">
+            <Icon name="users" size={17} /> {num(game.members.length)} لاعبين ·
+            لمّة واحدة
+          </span>
         </section>
 
-        {/* ديوان الترتيب */}
-        <section className="parchment px-6 py-3 sm:px-9">
-          <ul className="divide-y divide-[var(--line)]">
-            {ranked.map((m, i) => (
-              <MemberRow key={m.id} member={m} role={roleIndex(i, ranked.length)} money={moneyByMember[m.id] ?? 0} onRename={rename} onAdd={addPoint} />
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-[var(--line)] py-4 text-sm text-[var(--slate)]">
-            <span>فضي: 0–15 · 10 قروش</span>
-            <span>برونز: 16–25 · 15 قروش</span>
-            <span>ذهبي: 26 فما فوق · 20 قرش</span>
-          </div>
-        </section>
-      </div>
+        <MonthCountdown />
 
-      {/* إشعار الترقية */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            key={toast.key}
-            initial={{ opacity: 0, y: -16, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="font-title fixed left-1/2 top-6 z-40 -translate-x-1/2 rounded-full border-2 border-[#9a6f12] bg-[#f6ebd0] px-6 py-2 text-xl text-[#3a2a17] shadow-xl"
-            role="status"
-          >
-            {toast.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
+        {tab === "play" ? (
+          <>
+            <section className="hero-banner">
+              <img
+                src={`/desserts/${winner?.id ?? "kunafa"}.webp`}
+                alt={
+                  winner ? `حلو اللمّة: ${winner.name}` : "كنافة ذهبية بالفستق"
+                }
+                className="hero-photo"
+                fetchPriority="high"
+              />
+              <div className="hero-copy">
+                <span className="hero-kicker">الحلو أحلى لما نكون مع بعض</span>
+                <h2>
+                  مين قال المنافسة
+                  <br />
+                  ما بتكون <em>حلوة؟</em>
+                </h2>
+                <p>
+                  كل نقطة إلها قيمة، وكل لفّة إلها نكهة.
+                  <br />
+                  جمّعوا نقاطكم واتركوا اختيار الحلو للحظ.
+                </p>
+                <a href="#wheel" className="hero-link">
+                  خلّينا نختار الحلو <Icon name="arrow" size={18} />
+                </a>
+              </div>
+              <div className="hero-stamp">
+                <Icon name="cake" size={24} />
+                <span>
+                  لمّة حلوة
+                  <br />
+                  <b>على أصولها</b>
+                </span>
+              </div>
+              <span className="hero-number">01 — THE SWEET SIDE OF PLAY</span>
+            </section>
 
-      <AnimatePresence>
-        {confirmReset && (
-          <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b0830]/70 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label="تأكيد التصفير">
-            <motion.div initial={{ scale: 0.94, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96 }} className="parchment w-full max-w-sm p-7">
-              <h2 className="font-title text-2xl font-bold">تصفير الكنز؟</h2>
-              <p className="mt-2 text-[var(--slate)]">سيتم حذف كل النقاط والكوينز وإعادة الأسماء الأصلية، وتُحدَّث قاعدة البيانات. لا يمكن التراجع عن ذلك.</p>
-              <div className="mt-6 flex gap-3">
-                <button onClick={resetAll} className="flex-1 rounded-xl bg-[#9c2019] py-2 font-bold text-white hover:bg-[#b3261e]">
-                  نعم، صفّر
+            <section className="stats" aria-label="ملخص النقاط">
+              <article>
+                <span className="stat-icon green">
+                  <Icon name="coin" />
+                </span>
+                <div>
+                  <p>قيمة النقطة ثابتة</p>
+                  <strong>
+                    {num(5)} <small>قروش</small>
+                  </strong>
+                </div>
+                <span className="stat-foot">بكل مرة، لكل لاعب</span>
+              </article>
+              <article>
+                <span className="stat-icon caramel">
+                  <Icon name="users" />
+                </span>
+                <div>
+                  <p>مجموع نقاط الفريق</p>
+                  <strong>
+                    {num(total)} <small>نقطة</small>
+                  </strong>
+                </div>
+                <span className="stat-foot">كل نقطة بتفرق</span>
+              </article>
+              <article>
+                <span className="stat-icon rose">
+                  <Icon name="coin" />
+                </span>
+                <div>
+                  <p>إجمالي قيمة النقاط</p>
+                  <strong dir="rtl">
+                    <bdi>{money(total)}</bdi> <small>دينار أردني</small>
+                  </strong>
+                </div>
+                <span className="stat-foot">٢٠ نقطة = ١ دينار</span>
+              </article>
+            </section>
+
+            <div className="play-grid">
+              <section className="panel wheel-panel" id="wheel">
+                <div className="panel-heading">
+                  <div>
+                    <div className="eyebrow">خلّي الحظ يعزمكم</div>
+                    <h2>عجلة الحلو</h2>
+                  </div>
+                  <span className="subtle-tag">
+                    {num(DESSERTS.length)} نكهات · فرص متساوية
+                  </span>
+                </div>
+                <div className={`wheel-stage ${spinning ? "is-spinning" : ""}`}>
+                  <div className="wheel-pointer" />
+                  <div
+                    className="wheel-disc"
+                    style={{
+                      transform: `rotate(${rotation}deg)`,
+                      transitionDuration: `${duration}ms`,
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 440 440"
+                      role="img"
+                      aria-label="عجلة اختيار عشوائي تضم جميع أنواع الحلويات العشرة"
+                    >
+                      <circle cx="220" cy="220" r="216" fill="#e7d6b8" />
+                      <circle cx="220" cy="220" r="207" fill="#553b30" />
+                      {DESSERTS.map((dessert, i) => {
+                        const angle = i * 36,
+                          end = (i + 1) * 36;
+                        const point = (a: number, r: number) => [
+                          220 + r * Math.sin((a * Math.PI) / 180),
+                          220 - r * Math.cos((a * Math.PI) / 180),
+                        ];
+                        const a = point(angle, 199),
+                          b = point(end, 199),
+                          label = point(angle + 18, 137);
+                        return (
+                          <g key={dessert.id}>
+                            <path
+                              d={`M220 220 L${a[0]} ${a[1]} A199 199 0 0 1 ${b[0]} ${b[1]} Z`}
+                              fill={i % 2 === 0 ? "#355749" : "#eadcc5"}
+                              stroke="#ffffff25"
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={label[0]}
+                              y={label[1]}
+                              transform={`rotate(${angle + 18 - 90}, ${label[0]}, ${label[1]})`}
+                              fill={i % 2 === 0 ? "#fff4df" : "#574238"}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              fontSize={dessert.short.length > 9 ? 13 : 15}
+                              fontWeight="600"
+                            >
+                              {dessert.short}
+                            </text>
+                            <circle
+                              cx={point(angle + 18, 212)[0]}
+                              cy={point(angle + 18, 212)[1]}
+                              r="2.7"
+                              fill="#9d7852"
+                            />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                  <div className="wheel-hub">
+                    <Icon name="cake" size={30} />
+                    <span>حلا اللمّة</span>
+                  </div>
+                  <span className="wheel-spark spark-one">✧</span>
+                  <span className="wheel-spark spark-two">✳</span>
+                </div>
+                <button
+                  className="spin-button"
+                  onClick={spin}
+                  disabled={!ready || spinning}
+                >
+                  <Icon name="wheel" />
+                  {spinning ? "الحظ عم يختار…" : "لفّ العجلة… وشوف حظكم"}
+                  <Icon name="arrow" size={19} />
                 </button>
-                <button onClick={() => setConfirmReset(false)} className="flex-1 rounded-xl border border-[var(--line)] py-2 font-bold hover:bg-black/5">
-                  إلغاء
+                <p className="wheel-caption">
+                  النوع اللي بتختاره العجلة، على اللاعبين يجيبوه للّمة.
+                </p>
+                <div
+                  className={`draw-result ${winner && !spinning ? "has-result" : ""}`}
+                  aria-live="polite"
+                >
+                  {winner && !spinning ? (
+                    <>
+                      <img
+                        src={`/desserts/${winner.id}.webp`}
+                        alt={winner.name}
+                      />
+                      <div>
+                        <small>حلو اللمّة الجاية</small>
+                        <strong>{winner.name}</strong>
+                      </div>
+                      <span className="result-star">✦</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="result-icon">
+                        <Icon name="cake" />
+                      </span>
+                      <div>
+                        <small>
+                          {spinning ? "شو بتتوقعوا يطلع؟" : "جاهزين للحلو؟"}
+                        </small>
+                        <strong>
+                          {spinning
+                            ? "ثواني وبنعرف النتيجة"
+                            : "أول لفّة، وأول حكاية حلوة"}
+                        </strong>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </section>
+
+              <section className="panel players-panel">
+                <div className="panel-heading">
+                  <div>
+                    <div className="eyebrow">كل لاعب إله نصيب</div>
+                    <h2>
+                      نقاط اللاعبين{" "}
+                      <span className="count-badge">
+                        {num(game.members.length)}
+                      </span>
+                    </h2>
+                  </div>
+                  <button
+                    className="text-button"
+                    disabled={!ready}
+                    onClick={() => editDialog.current?.showModal()}
+                  >
+                    تعديل الأسماء
+                  </button>
+                </div>
+                <div className="players-table-head">
+                  <span>اللاعب</span>
+                  <span>النقاط / القيمة</span>
+                  <span>تسجيل</span>
+                </div>
+                <div className="player-list">
+                  {ranked.map((member, index) => (
+                    <article className="player-row" key={member.id}>
+                      <span className={`avatar avatar-${member.id}`}>
+                        {member.name.slice(0, 1)}
+                        <small>{num(index + 1)}</small>
+                      </span>
+                      <div className="player-name">
+                        <h3>{member.name}</h3>
+                        <span>
+                          {member.points > 0 &&
+                          member.points === ranked[0].points
+                            ? "أعلى النقاط"
+                            : "من أهل اللمّة"}
+                        </span>
+                      </div>
+                      <div className="player-score">
+                        <strong>
+                          {num(member.points)} <small>نقطة</small>
+                        </strong>
+                        <span>
+                          <bdi>{money(member.points)}</bdi> د.أ
+                        </span>
+                      </div>
+                      <div className="score-controls">
+                        <button
+                          className="add-point"
+                          aria-label={`أضف نقطة لـ ${member.name}`}
+                          disabled={
+                            !ready ||
+                            member.points >= MAX_POINTS ||
+                            game.history.length >= 599999
+                          }
+                          onClick={() => addPoint(member.id)}
+                        >
+                          +1
+                        </button>
+                        <button
+                          className="add-point subtract-point"
+                          aria-label={`اخصم نقطة من ${member.name}`}
+                          disabled={!ready || member.points === 0}
+                          onClick={() => subtractPoint(member.id)}
+                        >
+                          −1
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="players-bottom">
+                  <span>
+                    <span className="online-dot" /> كل نقطة تُحسب بـ ٥ قروش
+                  </span>
+                  <button
+                    className="text-button"
+                    disabled={!ready || !game.history.length}
+                    onClick={undo}
+                  >
+                    <Icon name="undo" size={15} /> تراجع عن آخر نقطة
+                  </button>
+                </div>
+                <div className="players-tip">
+                  <Icon name="coin" size={20} />
+                  <p>
+                    زيد نقطة بـ <b>+1</b> أو انقص نقطة بـ <b>−1</b>، والقيمة
+                    بتتحدّث تلقائيًا.
+                  </p>
+                </div>
+              </section>
+            </div>
+
+            <section className="dessert-section" id="desserts">
+              <div className="section-heading">
+                <div>
+                  <div className="eyebrow">قائمة تستاهل اللفّة</div>
+                  <h2>عشرة أسباب للَمّة حلوة</h2>
+                </div>
+                <span>
+                  كل هالخيارات… والحظ بختار واحد{" "}
+                  <span className="tiny-star">✳</span>
+                </span>
+              </div>
+              <div className="dessert-grid">
+                {DESSERTS.map((dessert, index) => (
+                  <article
+                    key={dessert.id}
+                    className={`dessert-card ${winner?.id === dessert.id ? "selected" : ""}`}
+                  >
+                    <div className="dessert-image">
+                      <img
+                        src={`/desserts/${dessert.id}.webp`}
+                        alt={dessert.name}
+                        loading="lazy"
+                      />
+                      {dessert.id === "delight" && (
+                        <img
+                          className="biscuit-inset"
+                          src="/desserts/biscuits.webp"
+                          alt="بسكوت"
+                          loading="lazy"
+                        />
+                      )}
+                      <span className="dessert-number">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      {winner?.id === dessert.id && (
+                        <span className="selected-label">
+                          <Icon name="check" size={13} /> اختيار العجلة
+                        </span>
+                      )}
+                    </div>
+                    <h3>{dessert.name}</h3>
+                    <p>{dessert.note}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        ) : (
+          <section className="panel history-panel">
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">من أول لفّة</div>
+                <h2>سجل اختيارات العجلة</h2>
+              </div>
+              <span className="subtle-tag">آخر ١٠٠ اختيار</span>
+            </div>
+            {!game.draws.length ? (
+              <div className="empty-state">
+                <Icon name="clock" size={48} />
+                <h3>لسّه الحكاية ما بلّشت</h3>
+                <p>لفّوا العجلة، وأول اختيار رح تلاقوه هون.</p>
+                <button
+                  className="primary-button"
+                  onClick={() => setTab("play")}
+                >
+                  يلا نلفّ العجلة
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            ) : (
+              <div className="draw-history">
+                {game.draws.map((draw, i) => {
+                  const dessert = DESSERTS.find(
+                    (d) => d.id === draw.dessertId,
+                  )!;
+                  return (
+                    <article key={draw.id}>
+                      <img
+                        src={`/desserts/${dessert.id}.webp`}
+                        alt={dessert.name}
+                      />
+                      <div>
+                        <small>
+                          {i === 0
+                            ? "آخر اختيار"
+                            : `لمّة حلوة رقم ${num(game.draws.length - i)}`}
+                        </small>
+                        <h3>{dessert.name}</h3>
+                        <time dateTime={draw.at}>{date(draw.at)}</time>
+                      </div>
+                      <span>{i === 0 ? "✦" : "✧"}</span>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
-      </AnimatePresence>
-    </main>
+
+        <div className="notice" role="status" aria-live="polite">
+          {notice}
+        </div>
+        <footer className="page-footer">
+          <span>
+            <Icon name="cake" size={19} /> حلا اللمّة <span>·</span> المنافسة
+            إلها طعم ثاني
+          </span>
+          <div>
+            <button onClick={() => setShowCredits((v) => !v)}>
+              مصادر الصور
+            </button>
+            <span>·</span>
+            <button
+              disabled={!ready || spinning}
+              onClick={() => resetDialog.current?.showModal()}
+            >
+              بدء جلسة جديدة
+            </button>
+          </div>
+        </footer>
+        {showCredits && (
+          <section className="photo-credits" aria-label="مصادر الصور">
+            <h3>صور حقيقية للحلويات</h3>
+            <p>
+              صور توضيحية من Wikimedia Commons ومصدر المنتج. تم تصغير الصور
+              وتحويلها إلى WebP.
+            </p>
+            {credits.map((credit) => (
+              <p key={credit.id}>
+                <a href={credit.source} target="_blank" rel="noreferrer">
+                  {DESSERTS.find((d) => d.id === credit.id)?.name ?? "بسكوت"}
+                </a>{" "}
+                — {credit.author} ·{" "}
+                {credit.licenseUrl ? (
+                  <a href={credit.licenseUrl} target="_blank" rel="noreferrer">
+                    {credit.license}
+                  </a>
+                ) : (
+                  credit.license
+                )}
+              </p>
+            ))}
+          </section>
+        )}
+      </main>
+
+      <dialog ref={editDialog} className="sweet-dialog">
+        <form onSubmit={saveNames}>
+          <div className="dialog-heading">
+            <h2>أهل اللمّة</h2>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => editDialog.current?.close()}
+              aria-label="إغلاق"
+            >
+              <Icon name="close" />
+            </button>
+          </div>
+          <p>عدّلوا الأسماء، وخَلّوا لكل لاعب مكانه.</p>
+          <div className="name-fields">
+            {game.members.map((member) => (
+              <label key={`${member.id}-${member.name}`}>
+                اللاعب {num(member.id)}
+                <input
+                  name={`name-${member.id}`}
+                  defaultValue={member.name}
+                  maxLength={20}
+                  required
+                  pattern=".*\S.*"
+                  autoComplete="off"
+                />
+              </label>
+            ))}
+          </div>
+          <button type="submit" className="primary-button">
+            حفظ الأسماء
+          </button>
+        </form>
+      </dialog>
+      <dialog ref={resetDialog} className="sweet-dialog">
+        <div className="dialog-heading">
+          <h2>نبدأ لمّة جديدة؟</h2>
+          <button
+            className="icon-button"
+            onClick={() => resetDialog.current?.close()}
+            aria-label="إغلاق"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <p>
+          رح تتصفّر نقاط جميع اللاعبين وينحذف سجل اختيارات العجلة. أسماء اللاعبين
+          بتظل محفوظة. هالخطوة ما إلها تراجع.
+        </p>
+        <div className="dialog-actions">
+          <button
+            className="danger-button"
+            onClick={() => {
+              if (spinLock.current) return;
+              setGame((previous) => ({
+                members: previous.members.map((m) => ({ ...m, points: 0 })),
+                history: [],
+                draws: [],
+              }));
+              setRotation(0);
+              resetDialog.current?.close();
+              setNotice("بدأت جلسة جديدة. يلا نحلّي اللمّة!");
+            }}
+          >
+            نعم، ابدأ جلسة جديدة
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => resetDialog.current?.close()}
+          >
+            نكمّل جلستنا
+          </button>
+        </div>
+      </dialog>
+    </div>
   );
 }

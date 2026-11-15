@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { IBM_Plex_Sans_Arabic, Aref_Ruqaa } from "next/font/google";
 import "./globals.css";
 
@@ -6,7 +6,6 @@ const plex = IBM_Plex_Sans_Arabic({
   subsets: ["arabic", "latin"],
   weight: ["400", "500", "600", "700"],
 });
-// خط الرقعة للعناوين والألقاب (طابع ألف ليلة وليلة)
 const ruqaa = Aref_Ruqaa({
   subsets: ["arabic", "latin"],
   weight: ["400", "700"],
@@ -14,11 +13,16 @@ const ruqaa = Aref_Ruqaa({
 });
 
 export const metadata: Metadata = {
-  title: "حصالة علي بابا والأربعين حرامي",
-  description: "سجّل نقاط الفريق وشاهد كنز الحمار يمتلئ",
+  title: "حلا اللمّة | نقاطكم تحلّي جمعتكم",
+  description:
+    "نقاط لكل لاعب بسعر ثابت ٥ قروش، وعجلة عشوائية لاختيار حلو اللمّة من عشرة أنواع من الحلويات.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ar" dir="rtl">
       <body className={`${plex.className} ${ruqaa.variable}`}>{children}</body>

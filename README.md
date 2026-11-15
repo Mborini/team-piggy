@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+﻿# حلا اللمّة
 
-## Getting Started
+لعبة فريق عربية: نقاط لكل لاعب وعجلة عشوائية لاختيار الحلو الذي يحضره اللاعبون.
 
-First, run the development server:
+- قيمة النقطة ثابتة: **٥ قروش**، أي **٢٠ نقطة = دينار أردني واحد**.
+- الأسماء والنقاط السابقة محفوظة؛ تُحتسب قيمة جميع النقاط بالسعر الثابت الجديد.
+- تضم العجلة عشرة خيارات. «راحة حلقوم وبسكوت» خيار واحد يجمع الاثنين.
+- تسجيل نقطة، التراجع عن آخر نقطة، تعديل الأسماء، وسجل آخر ١٠٠ اختيار.
+- بدء جلسة جديدة يحتاج تأكيدًا ويمسح النقاط والسجل مع الاحتفاظ بالأسماء.
+- البيانات مشتركة ومحفوظة في Neon؛ حالة الحفظ وإعادة المحاولة ظاهرتان في الواجهة.
 
-```bash
+## التشغيل
+
+استخدم Node.js 22.17 أو أحدث، ثم:
+
+```sh
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+أضف `DATABASE_URL` في `.env.local` برابط اتصال Neon. تُنشأ الجداول تلقائيًا عند أول طلب. جدول `dessert_game` إضافة لحفظ نتائج العجلة؛ جداول اللاعبين والنقاط الحالية تبقى مستخدمة.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```sh
+npm test
+npm run lint
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+اختبار `npm test` يتحقق من السعر الثابت، قراءة النقاط القديمة، صحة البيانات، ومطابقة مؤشر العجلة لجميع النتائج.
 
-## Learn More
+## الصور
 
-To learn more about Next.js, take a look at the following resources:
+الصور الحقيقية محفوظة محليًا بصيغة WebP داخل `public/desserts`، ومصادرها وأسماء المصورين وتراخيصها في `credits.json` وفي «مصادر الصور» أسفل الصفحة. يمكن إعادة تنزيلها بالأمر `node scripts/fetch-dessert-images.mjs`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+مسار اللعبة الإضافية `/conan` موجود كما هو.

@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import type { Draw } from "@/lib/game";
 
 const DEFAULT_NAMES = ["نائل", "Borini", "نايف", "خلايلة", "زياد", "مجدي"];
 
@@ -7,7 +8,9 @@ export type Member = { id: number; name: string; points: number };
 export type Entry = { memberId: number; tier: Tier };
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL غير موجود. أضفه في .env.local (رابط الاتصال من لوحة Neon).");
+  throw new Error(
+    "DATABASE_URL غير موجود. أضفه في .env.local (رابط الاتصال من لوحة Neon).",
+  );
 }
 const sql = neon(process.env.DATABASE_URL);
 
@@ -29,6 +32,7 @@ async function setup() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_events_member ON score_events(member_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS dessert_game (id INTEGER PRIMARY KEY CHECK (id = 1), draws JSONB NOT NULL DEFAULT '[]'::jsonb)`;
 
   const ids = DEFAULT_NAMES.map((_, i) => i + 1);
   await sql`
@@ -48,17 +52,30 @@ function ready() {
   return g.__piggyReady;
 }
 
-export async function readState(): Promise<{ members: Member[]; history: Entry[] }> {
+export async function readState(): Promise<{
+  members: Member[];
+  history: Entry[];
+  draws: Draw[];
+}> {
   await ready();
-  const [members, history] = await Promise.all([
+  const [members, history, game] = await Promise.all([
     sql`SELECT id, name, points FROM members ORDER BY id`,
     sql`SELECT member_id AS "memberId", tier FROM score_events ORDER BY id`,
+    sql`SELECT draws FROM dessert_game WHERE id = 1`,
   ]);
-  return { members: members as Member[], history: history as Entry[] };
+  return {
+    members: members as Member[],
+    history: history as Entry[],
+    draws: (game[0]?.draws ?? []) as Draw[],
+  };
 }
 
 // حفظ الحالة كاملة داخل transaction واحدة (إما تنجح كلها أو لا شيء)
-export async function writeState(members: Member[], history: Entry[]) {
+export async function writeState(
+  members: Member[],
+  history: Entry[],
+  draws: Draw[] = [],
+) {
   await ready();
   const ids = members.map((m) => m.id);
   const names = members.map((m) => m.name);
@@ -67,6 +84,7 @@ export async function writeState(members: Member[], history: Entry[]) {
   const evTiers = history.map((h) => h.tier);
 
   await sql.transaction([
+    sql`INSERT INTO dessert_game (id, draws) VALUES (1, ${JSON.stringify(draws)}::jsonb) ON CONFLICT (id) DO UPDATE SET draws = EXCLUDED.draws`,
     sql`
       UPDATE members SET name = u.name, points = u.points
       FROM unnest(${ids}::int[], ${names}::text[], ${points}::int[]) AS u(id, name, points)
